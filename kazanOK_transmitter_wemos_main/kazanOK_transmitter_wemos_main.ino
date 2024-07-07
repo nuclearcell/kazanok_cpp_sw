@@ -55,6 +55,17 @@ byte img_buffer[256];
 size_t img_len;
 bool img_updated = false;
 
+
+bool receiver_avaible = false;//❎
+
+bool data_pack_await = false;
+unsigned long data_pack_timer = 0UL;
+unsigned long data_sending_delay = 3000;//1000
+
+unsigned long lora_send_await_start = 0;
+unsigned long lora_send_await_delay = 0;
+float lora_send_await_quotient = 1.1; //0.1
+
 void setup() {
   Serial.begin(115200);
   ss.begin(9600);
@@ -137,12 +148,9 @@ void setup() {
   LoRa.endPacket(true);
 }
 
-
-bool data_pack_await = false;
-unsigned long data_pack_timer = 0UL;
-unsigned long data_sending_delay = 1000;
-
-
+int inline min(int a, int b){
+  return ((a < b) ? a : b);
+}
 
 
 // Collects all data //❗🛑🛑 TODO data optimization later
@@ -150,7 +158,7 @@ bool send_data_packet_async(){
   if(LoRa.beginPacket() == 0) return false;
   unsigned long transmission_start = millis();
   LoRa.write(DATA_PACKET);
-  LoRa.write((uint8_t*)&transmission_start, sizeof(transmission_start));
+  //LoRa.write((uint8_t*)&transmission_start, sizeof(transmission_start));
   String bmp_packet = String(P) + "," + String(T) + ";";
   String mpu_packet = String(ax) + "," + String(ay) + "," + String(az) + ";";
   String mpu_packet2 = String(gx) + "," + String(gy) + "," + String(gz) + ";";
@@ -164,11 +172,23 @@ bool send_data_packet_async(){
   return LoRa.endPacket(true);
 }
 
+size_t i_counter = 0;
+
 bool send_image_packet_async(){
   if(LoRa.beginPacket() == 0) return false;
   //unsigned long transmission_start = millis();
+  // ❗❗❗DEBUG
+  //Serial.write(DATA_PACKET);
+  //Serial.write(img_buffer, img_len);
+  //Serial.write('~');
+
+
   LoRa.write(IMG_PACKET);
+  //LoRa.print(min(i_counter,999));
+  //LoRa.print('|');
   LoRa.write(img_buffer, img_len);
+  i_counter++;
+  //if(img_len < IMG_PACKET_MAX_SIZE) i_counter = 0;
   return LoRa.endPacket(true);
 }
 
@@ -185,12 +205,16 @@ void loop() {
   if(packetSize){
     byte req_code = LoRa.read();
     String output = LoRa.readString();
-    if (req_code == DATA_PACKET){
+    if (req_code == SYNC_PACKET){
+      receiver_avaible = true;
+    }
+    else if (req_code == DATA_PACKET){
       Serial.write(DATA_PACKET);
       Serial.print("LoRa ");
       Serial.print(output);
       Serial.write('~');
     }
+    
   }
 
   if(Serial.available()){
@@ -202,18 +226,21 @@ void loop() {
     }
   }
   update_sensors();
-  if(data_pack_await){
-    if(send_data_packet_async()){
-      data_pack_await = false;
-    }
-  }
-  else {
-    if(img_updated){
-      if(send_image_packet_async()){
-        Serial.write(IMG_PACKET);
-        img_updated = false;
+  if(receiver_avaible){
+    if(data_pack_await){
+      if(send_data_packet_async()){
+        data_pack_await = false;
       }
     }
+    else {
+      if(img_updated){
+        if(send_image_packet_async()){
+          Serial.write(IMG_PACKET);
+          img_updated = false;
+        }
+      }
+    }
+    receiver_avaible = false;
   }
   //Serial.write(DATA_PACKET);
   //Serial.print(millis()-lastLoopUpdate);

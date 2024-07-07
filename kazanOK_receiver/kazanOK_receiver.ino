@@ -5,6 +5,10 @@
 #include <SPI.h>
  
 #define IMG_BUFFER_SIZE 3200
+#define RECEIVER_TIMEOUT 10000
+
+unsigned long last_received = 0;
+bool is_in_awaiting_packet = false;
 
 #define ss 15
 #define rst 16
@@ -24,7 +28,7 @@ void setup() {
  
   if (!LoRa.begin(433E6)) {
     Serial.println("Starting LoRa failed!");
-    while (1);
+    while (1) delay(10);
   }
   //pinMode(dio0, INPUT);
   //attachInterrupt(digitalPinToInterrupt(dio0), onPacketReceived, RISING);
@@ -46,45 +50,23 @@ size_t counter = 0;
 size_t offset = 0;
 char img_buffer[IMG_BUFFER_SIZE];
 void loop() {
-  //if(packetAvaible){
-  //  packetAvaible = false;
-  //  readBuffer();
-  //}
-  // do nothing
-  /*
-  int packetSize = LoRa.parsePacket();
-  if (packetSize) {
-    Serial.println(LoRa.readString());
+  if (millis() - last_received >= RECEIVER_TIMEOUT) {
+    LoRa.beginPacket();
+    LoRa.write(SYNC_PACKET);
+    LoRa.endPacket(true);
+    Serial.println("Connection lost, awaiting....");
+    last_received = millis();
   }
-  if (Serial.available()){
 
-  }
-  */
-  
+  long start1 = millis();
   int packetSize = LoRa.parsePacket();
-  if (packetSize /*&& prevPrompt.startsWith("get_img")*/) { 
+  if (packetSize) { 
     //Serial.println(packetSize);
-    long start = millis();
-    if(offset+packetSize >= IMG_BUFFER_SIZE){
-      //Serial.println("ERR: Image Buffer Overflow");
-      //Serial.println("Rewriting...");
-      offset = 0;
-    }
-    // read packet 
-    /*while (LoRa.available())
-    {
-      //LoRa.readString()
-      int inChar = LoRa.read();
-      inString += (char)inChar;
-      //inString += String(inChar, HEX);
-      //val = inString.toInt();       
-    }*/
+    long start2 = millis();
     inString = LoRa.readString();
-    //LoRa.readBytes(img_buffer+offset, packetSize);
-    //Serial.write(inString.c_str(), inString.length());
-    //Serial.availableForWrite()
     Serial.println(inString);
-    Serial.println("Time:" + String(millis()-start));
+    Serial.println("Time1:" + String(millis()-start1));
+    Serial.println("Time2:" + String(millis()-start2));
     Serial.print("LEN:");
     Serial.println(inString.length());
     //Serial.println(offset);
@@ -93,7 +75,12 @@ void loop() {
     offset += packetSize; 
     counter++; 
     //Serial.println(LoRa.packetRssi());    
+    LoRa.beginPacket();
+    LoRa.write(SYNC_PACKET);
+    LoRa.endPacket(true);
+    last_received = millis();
   } 
+  
   
   if (Serial.available()) {
     offset = 0;
